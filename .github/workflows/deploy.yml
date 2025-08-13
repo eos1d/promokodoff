@@ -1,0 +1,47 @@
+name: Deploy to server
+
+on:
+  push:
+    branches: [ "main" ]   # если у вас master — замените на "master"
+  workflow_dispatch:        # ручной запуск из вкладки Actions
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          # Добавим host key, чтобы не было вопроса про known_hosts
+          ssh-keyscan -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Test SSH
+        shell: bash
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo connected"
+
+      - name: Rsync deploy
+        shell: bash
+        run: |
+          rsync -az --delete \
+            --exclude ".git/" \
+            --exclude ".github/" \
+            -e "ssh -p ${{ secrets.SSH_PORT }} -i ~/.ssh/id_ed25519" \
+            ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.SSH_PATH }}
+
+      # (необязательно) Права/владелец после деплоя
+      # - name: Fix permissions
+      #   shell: bash
+      #   run: |
+      #     ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "\
+      #       chown -R fastuser:fastuser '${{ secrets.SSH_PATH }}' && \
+      #       find '${{ secrets.SSH_PATH }}' -type d -exec chmod 755 {} \; && \
+      #       find '${{ secrets.SSH_PATH }}' -type f -exec chmod 644 {} \; \
+      #     "
